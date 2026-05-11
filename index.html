@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tornea4Pistas V1.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: system-ui; -webkit-tap-highlight-color: transparent; }
+        .card { background: #1e293b; border-radius: 14px; padding: 1.2rem; margin-bottom: 1rem; border: 1px solid #334155; }
+        .btn-green { background: #22c55e; color: white; font-weight: bold; padding: 1rem; border-radius: 10px; width: 100%; border: none; cursor: pointer; text-align: center; }
+        .btn-play { background: #3b82f6; color: white; font-weight: 800; padding: 0.6rem; border-radius: 10px; flex: 1; text-transform: uppercase; font-size: 10px; }
+        .btn-fast { background: #6366f1; color: white; font-weight: 800; padding: 0.6rem; border-radius: 10px; flex: 1; text-transform: uppercase; font-size: 10px; }
+        input, select { background: #0f172a; border: 1px solid #444; padding: 0.5rem; border-radius: 6px; color: white; width: 100%; text-align: center; font-size: 16px; }
+        .pista-tag { background: #d97706; color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 900; }
+        .grupo-a { border-left: 4px solid #3b82f6; }
+        .grupo-b { border-left: 4px solid #ef4444; }
+        .final-tag { background: #be185d; color: white; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 900; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+        th, td { padding: 6px 4px; border-bottom: 1px solid #334155; font-size: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="max-w-md mx-auto p-4 pb-20">
+    <header class="flex justify-between items-center mb-4">
+        <h1 class="text-xl font-black text-green-500 italic uppercase">Tornea 4 Pistas</h1>
+        <div id="fase-info" class="badge bg-slate-800 px-2 py-1 rounded text-[10px] text-yellow-400 font-bold">Configuración</div>
+    </header>
+
+    <div id="pantalla-dinamica">
+        <div id="area-recuperacion"></div>
+        <div id="step-1">
+            <div class="card">
+                <h2 class="text-[10px] font-bold mb-4 uppercase text-slate-500 text-center tracking-widest">Ajustes Generales</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-[10px] text-slate-400 block mb-1 uppercase text-center">Tiempo Ronda (Minutos)</label>
+                        <input type="number" id="cfg-tiempo" value="20">
+                    </div>
+                    <div class="border-t border-slate-700 pt-4">
+                        <label class="text-[10px] text-slate-400 block mb-1 uppercase text-center">Números de Pistas</label>
+                        <div class="grid grid-cols-4 gap-2">
+                            <input type="number" id="p-val-1" value="1">
+                            <input type="number" id="p-val-2" value="2">
+                            <input type="number" id="p-val-3" value="3">
+                            <input type="number" id="p-val-4" value="4">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button onclick="logicaSiguiente()" class="btn-green uppercase tracking-widest">Siguiente</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let state = { 
+    parejas: [], ronda: 1, resultados: 0, pistasReales: [1, 2, 3, 4], 
+    tiempoRonda: 20, enProgreso: false, modificado: false, 
+    fase: 'grupos' // 'grupos', 'semis', 'finales'
+};
+
+function guardarEnDisco() { localStorage.setItem('tornea4_backup', JSON.stringify(state)); }
+
+window.onload = function() {
+    const backup = localStorage.getItem('tornea4_backup');
+    if (backup) {
+        const saved = JSON.parse(backup);
+        if (saved.enProgreso) {
+            document.getElementById('area-recuperacion').innerHTML = `<div class="bg-orange-600 p-3 rounded-lg mb-4 text-center"><p class="text-xs font-bold mb-2 text-white">Torneo en curso</p><button onclick="restaurarTorneo()" class="bg-white text-orange-600 px-4 py-1 rounded text-[10px] font-bold mr-2 uppercase">Reanudar</button><button onclick="borrarCache()" class="bg-black text-white px-4 py-1 rounded text-[10px] uppercase">Nuevo</button></div>`;
+        }
+    }
+};
+
+function restaurarTorneo() {
+    state = JSON.parse(localStorage.getItem('tornea4_backup'));
+    document.getElementById('area-recuperacion').innerHTML = "";
+    renderPantallaJuego();
+    if(state.fase === 'grupos') mostrarPartidosGrupos();
+    else if(state.fase === 'semis') hacerSemis();
+    else if(state.fase === 'finales') hacerFinales();
+}
+
+function borrarCache() { localStorage.removeItem('tornea4_backup'); location.reload(); }
+
+function logicaSiguiente() {
+    state.tiempoRonda = document.getElementById('cfg-tiempo').value || 20;
+    state.pistasReales = [
+        document.getElementById('p-val-1').value || 1,
+        document.getElementById('p-val-2').value || 2,
+        document.getElementById('p-val-3').value || 3,
+        document.getElementById('p-val-4').value || 4
+    ];
+    
+    let html = `<div id="lista-jugadores" class="grid grid-cols-1 gap-2 mb-4 h-[65vh] overflow-y-auto">`;
+    for(let i=0; i<16; i++) {
+        const grupo = i < 8 ? 'A' : 'B';
+        html += `<div class="bg-slate-800/40 p-3 rounded-lg border border-slate-700/50"><div class="flex gap-2 mb-2"><span class="text-[9px] text-slate-500 font-bold">G${grupo}-${i+1}</span><input type="text" placeholder="Jugador" class="p-name !text-left h-8 text-sm"></div><div class="flex gap-2"><select class="p-pos bg-slate-700 h-7 text-[10px]" onchange="state.modificado=true"><option value="reves">Revés</option><option value="drive" ${i%2!==0?'selected':''}>Drive</option></select><select class="p-lvl bg-slate-700 h-7 text-[10px]" onchange="state.modificado=true"><option value="25">25</option><option value="50" selected>50</option><option value="75">75</option></select></div></div>`;
+    }
+    html += `</div><button onclick="finalizarConfig()" class="btn-green uppercase font-bold tracking-widest">Iniciar Torneo</button>`;
+    document.getElementById('pantalla-dinamica').innerHTML = html;
+}
+
+function finalizarConfig() {
+    const names = document.querySelectorAll('.p-name');
+    const lvls = document.querySelectorAll('.p-lvl');
+    const poss = document.querySelectorAll('.p-pos');
+    let poolA = [], poolB = [];
+    
+    names.forEach((n, i) => {
+        let player = { n: n.value || `J${i+1}`, l: parseInt(lvls[i].value), p: poss[i].value, id: i };
+        if (i < 8) poolA.push(player); else poolB.push(player);
+    });
+
+    state.parejas = [];
+    // Emparejar Grupo A
+    for (let i = 0; i < 8; i += 2) state.parejas.push({ id: state.parejas.length, nombres: `${poolA[i].n} / ${poolA[i+1].n}`, pts: 0, dg: 0, pj: 0, grupo: 'A' });
+    // Emparejar Grupo B
+    for (let i = 0; i < 8; i += 2) state.parejas.push({ id: state.parejas.length, nombres: `${poolB[i].n} / ${poolB[i+1].n}`, pts: 0, dg: 0, pj: 0, grupo: 'B' });
+
+    state.enProgreso = true; state.fase = 'grupos';
+    guardarEnDisco(); renderPantallaJuego(); mostrarPartidosGrupos();
+}
+
+function renderPantallaJuego() {
+    document.getElementById('pantalla-dinamica').innerHTML = `
+        <div id="controles-master" class="flex gap-2 mb-4">
+            <button onclick="iniciarCronoMaster()" class="btn-play">▶ Iniciar Crono</button>
+            <button onclick="desbloquearTodo()" class="btn-fast">⚡ Desbloquear</button>
+        </div>
+        <div id="tablas-grupos" class="space-y-4 mb-4"></div>
+        <div id="partidos-cont" class="space-y-4"></div>
+        <div id="zona-controles"></div>`;
+}
+
+function mostrarPartidosGrupos() {
+    state.resultados = 0; document.getElementById('fase-info').innerText = `Liga - Ronda ${state.ronda}/3`;
+    const cont = document.getElementById('partidos-cont'); cont.innerHTML = "";
+    
+    // Calendario 4 parejas (0,1,2,3 en cada grupo)
+    const cal = [[[0,3],[1,2]], [[0,2],[3,1]], [[0,1],[2,3]]];
+    const r = cal[state.ronda-1];
+    
+    // Grupo A partidos (IDs 0,1,2,3)
+    r.forEach((p, i) => cont.innerHTML += generarTarjeta(i, state.parejas[p[0]], state.parejas[p[1]], state.pistasReales[i]));
+    // Grupo B partidos (IDs 4,5,6,7)
+    r.forEach((p, i) => cont.innerHTML += generarTarjeta(i+2, state.parejas[p[0]+4], state.parejas[p[1]+4], state.pistasReales[i+2]));
+    
+    refrescarTablas();
+}
+
+function generarTarjeta(id, p1, p2, pista, tiempo = state.tiempoRonda, esPlayoff = false) {
+    return `<div class="card border-l-4 ${p1.grupo==='A'?'border-blue-500':'border-red-500'}">
+        <div class="flex justify-between items-center mb-2">
+            <span class="pista-tag uppercase">Pista ${pista}</span>
+            <span id="t-${id}" class="text-yellow-400 font-mono font-bold">${tiempo}:00</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="flex-1 text-[10px] font-bold text-left">${p1.nombres}</div>
+            <select id="m-${id}-0" class="w-12 bg-slate-800 h-8 text-sm" disabled>${Array.from({length:16},(_,v)=>`<option value="${v}">${v}</option>`).join('')}</select>
+            <div class="text-[9px] text-slate-500 font-black">VS</div>
+            <select id="m-${id}-1" class="w-12 bg-slate-800 h-8 text-sm" disabled>${Array.from({length:16},(_,v)=>`<option value="${v}">${v}</option>`).join('')}</select>
+            <div class="flex-1 text-[10px] font-bold text-right">${p2.nombres}</div>
+        </div>
+        <button onclick="confirmarResultado('${id}', ${p1.id}, ${p2.id})" id="b-save-${id}" class="hidden w-full mt-3 py-2 bg-orange-600 rounded text-[9px] font-bold uppercase">Confirmar</button>
+    </div>`;
+}
+
+function iniciarCronoMaster() {
+    ejecutarBocina(); let t = state.tiempoRonda * 60;
+    const interval = setInterval(() => {
+        t--; if(t <= 0) { clearInterval(interval); ejecutarBocina(); desbloquearTodo(); }
+        document.querySelectorAll('[id^="t-"]').forEach(d => d.innerText = `${Math.floor(t/60)}:${(t%60)<10?'0':''}${t%60}`);
+    }, 1000);
+}
+
+function desbloquearTodo() {
+    document.querySelectorAll('select[id^="m-"]').forEach(s => s.disabled = false);
+    document.querySelectorAll('button[id^="b-save-"]').forEach(b => b.classList.remove('hidden'));
+    document.querySelectorAll('[id^="t-"]').forEach(d => d.innerText = "FIN");
+}
+
+function confirmarResultado(idxPista, idA, idB) {
+    const m0 = parseInt(document.getElementById(`m-${idxPista}-0`).value);
+    const m1 = parseInt(document.getElementById(`m-${idxPista}-1`).value);
+    const p0 = state.parejas.find(p => p.id === idA);
+    const p1 = state.parejas.find(p => p.id === idB);
+
+    if (m0 > m1) p0.pts += 3; else if (m1 > m0) p1.pts += 3; else { p0.pts += 1; p1.pts += 1; }
+    p0.dg += (m0 - m1); p1.dg += (m1 - m0);
+    p0.pj++; p1.pj++;
+
+    document.getElementById(`b-save-${idxPista}`).classList.add('hidden');
+    state.resultados++; refrescarTablas(); guardarEnDisco();
+
+    if(state.resultados === 4) {
+        let txt = state.ronda < 3 ? "Siguiente Ronda" : "Ir a Playoffs";
+        document.getElementById('zona-controles').innerHTML = `<button onclick="proximaFase()" class="btn-green bg-blue-600 mt-4 uppercase text-xs font-black">${txt}</button>`;
+    }
+}
+
+function proximaFase() {
+    document.getElementById('zona-controles').innerHTML = "";
+    if (state.fase === 'grupos' && state.ronda < 3) {
+        state.ronda++; mostrarPartidosGrupos();
+    } else if (state.fase === 'grupos') {
+        state.fase = 'semis'; hacerSemis();
+    } else if (state.fase === 'semis') {
+        state.fase = 'finales'; hacerFinales();
+    } else {
+        borrarCache();
+    }
+    guardarEnDisco();
+}
+
+function refrescarTablas() {
+    const gA = state.parejas.filter(p => p.grupo === 'A').sort((a,b) => b.pts - a.pts || b.dg - a.dg);
+    const gB = state.parejas.filter(p => p.grupo === 'B').sort((a,b) => b.pts - a.pts || b.dg - a.dg);
+    
+    let html = `<div class="grid grid-cols-2 gap-2">`;
+    [gA, gB].forEach((g, i) => {
+        html += `<div class="card !p-2 !mb-0 text-[8px]"><p class="font-bold text-center mb-1 text-yellow-500">GRUPO ${i===0?'A':'B'}</p><table><tr><th class="text-left">Pareja</th><th>PTS</th><th>DG</th></tr>`;
+        g.forEach(p => html += `<tr><td>${p.nombres.substring(0,12)}..</td><td class="text-center font-bold">${p.pts}</td><td class="text-center">${p.dg}</td></tr>`);
+        html += `</table></div>`;
+    });
+    document.getElementById('tablas-grupos').innerHTML = html + `</div>`;
+}
+
+function hacerSemis() {
+    state.resultados = 0; document.getElementById('fase-info').innerText = "SEMIFINALES";
+    const gA = state.parejas.filter(p => p.grupo === 'A').sort((a,b) => b.pts - a.pts || b.dg - a.dg);
+    const gB = state.parejas.filter(p => p.grupo === 'B').sort((a,b) => b.pts - a.pts || b.dg - a.dg);
+    
+    // Guardar para finales
+    state.playoffs = {
+        principal: [[gA[0], gB[1]], [gB[0], gA[1]]],
+        consolacion: [[gA[2], gB[3]], [gB[2], gA[3]]]
+    };
+
+    const cont = document.getElementById('partidos-cont'); cont.innerHTML = "";
+    cont.innerHTML += `<p class="text-[9px] text-pink-500 font-bold text-center uppercase">Cuadro Principal</p>`;
+    cont.innerHTML += generarTarjeta('s1', gA[0], gB[1], state.pistasReales[0]);
+    cont.innerHTML += generarTarjeta('s2', gB[0], gA[1], state.pistasReales[1]);
+    cont.innerHTML += `<p class="text-[9px] text-blue-400 font-bold text-center uppercase mt-2">Consolación</p>`;
+    cont.innerHTML += generarTarjeta('s3', gA[2], gB[3], state.pistasReales[2]);
+    cont.innerHTML += generarTarjeta('s4', gB[2], gA[3], state.pistasReales[3]);
+    
+    // Sobrescribir función confirmar para semis
+    window.confirmarResultado = function(idx, idA, idB) {
+        document.getElementById(`b-save-${idx}`).classList.add('hidden');
+        const m0 = parseInt(document.getElementById(`m-${idx}-0`).value);
+        const m1 = parseInt(document.getElementById(`m-${idx}-1`).value);
+        
+        // Guardar ganadores/perdedores en un array temporal para las finales
+        if(!state.ganadoresSemis) state.ganadoresSemis = {};
+        state.ganadoresSemis[idx] = m0 > m1 ? {w: idA, l: idB} : {w: idB, l: idA};
+        
+        state.resultados++;
+        if(state.resultados === 4) {
+            document.getElementById('zona-controles').innerHTML = `<button onclick="proximaFase()" class="btn-green bg-purple-600 mt-4 uppercase text-xs font-black">Ir a Finales</button>`;
+        }
+        guardarEnDisco();
+    };
+}
+
+function hacerFinales() {
+    state.resultados = 0; document.getElementById('fase-info').innerText = "GRANDES FINALES";
+    const cont = document.getElementById('partidos-cont'); cont.innerHTML = "";
+    
+    const findP = (id) => state.parejas.find(p => p.id === id);
+    const gs = state.ganadoresSemis;
+
+    cont.innerHTML += `<p class="text-[9px] text-pink-500 font-bold text-center uppercase italic">Final Absoluta y 3º Puesto</p>`;
+    cont.innerHTML += generarTarjeta('f1', findP(gs.s1.w), findP(gs.s2.w), state.pistasReales[0]); // Final Principal
+    cont.innerHTML += generarTarjeta('f2', findP(gs.s1.l), findP(gs.s2.l), state.pistasReales[1]); // 3º Principal
+    
+    cont.innerHTML += `<p class="text-[9px] text-blue-400 font-bold text-center uppercase italic mt-2">Final Consolación y 7º Puesto</p>`;
+    cont.innerHTML += generarTarjeta('f3', findP(gs.s3.w), findP(gs.s4.w), state.pistasReales[2]); // Final Consolación
+    cont.innerHTML += generarTarjeta('f4', findP(gs.s3.l), findP(gs.s4.l), state.pistasReales[3]); // 7º Puesto
+    
+    window.confirmarResultado = function(idx) {
+        document.getElementById(`b-save-${idx}`).classList.add('hidden');
+        state.resultados++;
+        if(state.resultados === 4) {
+            document.getElementById('zona-controles').innerHTML = `<button onclick="borrarCache()" class="btn-green bg-slate-800 mt-4 uppercase text-[10px]">Terminar Torneo</button>`;
+        }
+    };
+}
+
+function ejecutarBocina() {
+    try { const ctx = new AudioContext(); const o = ctx.createOscillator(); o.type='square'; o.frequency.value=200; o.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 1.2); } catch(e){}
+}
+</script>
+</body>
+</html>
